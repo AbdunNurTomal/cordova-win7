@@ -283,7 +283,7 @@ static HRESULT execute_sql(BSTR callback_id, BSTR args)
 			case JSON_VALUE_STRING:
 				{
 					wchar_t *str = json_get_string_value(sql_arg);
-					db_res = sqlite3_bind_text16(stmt, index, str, wcslen(str) * sizeof(wchar_t), NULL);
+					db_res = sqlite3_bind_text16(stmt, index, str, wcslen(str) * sizeof(wchar_t), SQLITE_TRANSIENT);
 					free(str);
 					break;
 				}
