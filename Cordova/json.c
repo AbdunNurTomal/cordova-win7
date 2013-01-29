@@ -138,8 +138,10 @@ static BOOL json_parse_number(JsonCursor *cursor, JsonItem item)
 			item->value.as_int = (int) val64;
 			item->value.as_int64 = val64;
 	} else {
-		if (_snwscanf_s(value, value_len, L"%f", &item->value.as_double) != 1)
+		float fVal;
+		if (_snwscanf_s(value, value_len, L"%f", &fVal) != 1)
 			return FALSE;
+		item->value.as_double = (double)fVal;
 	}
 
 	return TRUE;
