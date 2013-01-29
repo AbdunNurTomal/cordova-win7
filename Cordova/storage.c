@@ -196,6 +196,19 @@ static BOOL is_ddl(const wchar_t *query)
 	return FALSE;
 }
 
+
+static void make_sql_error(BSTR callback_id, wchar_t* tx_id, wchar_t* err_type, wchar_t* message) {
+	wchar_t* result = L"{id: \"%s\", code:SQLError.%s,message:\"%s\"}";
+	wchar_t* buf;
+
+	buf = (wchar_t *) malloc(sizeof(wchar_t) * (1 + wcslen(result) + wcslen(tx_id) + wcslen(err_type) + wcslen(message)));
+	wsprintf(buf, result, tx_id, err_type, message);
+
+	cordova_fail_callback(callback_id, FALSE, CB_GENERIC_ERROR, buf);
+	free(buf);
+}
+
+
 static HRESULT execute_sql(BSTR callback_id, BSTR args)
 {
 	HRESULT res = S_OK;
@@ -230,11 +243,11 @@ static HRESULT execute_sql(BSTR callback_id, BSTR args)
 
 	if (is_ddl(command)) {
 		if (sqlite3_prepare16_v2(db, command, wcslen(command) * sizeof(wchar_t), &stmt, NULL) != SQLITE_OK) {
-			cordova_fail_callback(callback_id, FALSE, CB_GENERIC_ERROR, L"{code:SQLError.SYNTAX_ERR,message:\"Syntax error\"}");
+			make_sql_error(callback_id, tx_id, L"SYNTAX_ERR", L"Syntax error");
 			goto out;
 		}
 		if (sqlite3_step(stmt) != SQLITE_DONE) {
-			cordova_fail_callback(callback_id, FALSE, CB_GENERIC_ERROR, L"{code:SQLError.DATABASE_ERR,message:\"Database error\"}");
+			make_sql_error(callback_id, tx_id, L"DATABASE_ERR", L"Database error");
 			goto out;
 		}
 
@@ -250,7 +263,7 @@ static HRESULT execute_sql(BSTR callback_id, BSTR args)
 
 		// Prepare
 		if (sqlite3_prepare16_v2(db, command, wcslen(command) * sizeof(wchar_t), &stmt, NULL) != SQLITE_OK) {
-			cordova_fail_callback(callback_id, FALSE, CB_GENERIC_ERROR, L"{code:SQLError.SYNTAX_ERR,message:\"Syntax error\"}");
+			make_sql_error(callback_id, tx_id, L"SYNTAX_ERR", L"Syntax error");
 			goto out;
 		}
 
@@ -278,11 +291,11 @@ static HRESULT execute_sql(BSTR callback_id, BSTR args)
 				db_res = sqlite3_bind_null(stmt, index);
 				break;
 			default:
-				cordova_fail_callback(callback_id, FALSE, CB_GENERIC_ERROR, L"{code:SQLError.SYNTAX_ERR,message:\"Syntax error\"}");
+				make_sql_error(callback_id, tx_id, L"SYNTAX_ERR", L"Syntax error");
 				goto out;
 			}
 			if (db_res != SQLITE_OK) {
-				cordova_fail_callback(callback_id, FALSE, CB_GENERIC_ERROR,L"{code:SQLError.SYNTAX_ERR,message:\"Syntax error\"}");
+				make_sql_error(callback_id, tx_id, L"SYNTAX_ERR", L"Syntax error");
 				goto out;
 			}
 
@@ -319,7 +332,7 @@ static HRESULT execute_sql(BSTR callback_id, BSTR args)
 					} else if (sqlite3_column_type(stmt, j) == SQLITE_NULL) {
 						text_buf_append(response, L"null");
 					} else {
-						cordova_fail_callback(callback_id, FALSE, CB_GENERIC_ERROR, L"{code:SQLError.DATABASE_ERR,message:\"Database error\"}");
+						make_sql_error(callback_id, tx_id, L"DATABASE_ERR", L"Database error");
 						goto out;
 					}
 				}
@@ -331,7 +344,7 @@ static HRESULT execute_sql(BSTR callback_id, BSTR args)
 					text_buf_append(response, L",");
 			} while (db_res == SQLITE_ROW);
 		} else if (db_res != SQLITE_DONE) {
-			cordova_fail_callback(callback_id, FALSE, CB_GENERIC_ERROR, L"{code:SQLError.DATABASE_ERR,message:\"Database error\"}");
+			make_sql_error(callback_id, tx_id, L"DATABASE_ERR", L"Database error");
 			goto out;
 		}
 
