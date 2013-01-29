@@ -384,6 +384,9 @@ static HRESULT execute_sql(BSTR callback_id, BSTR args)
 							// We have to escape first all backslashes, then all double quotes.
 							wchar_t* escapedVal = str_replace(val, L"\\", L"\\\\");
 							escapedVal = str_replace(escapedVal, L"\"", L"\\\"");
+							escapedVal = str_replace(escapedVal, L"\n", L"\\n");
+							escapedVal = str_replace(escapedVal, L"\r", L"\\r");
+							escapedVal = str_replace(escapedVal, L"\t", L"\\t");
 							text_buf_append(response, escapedVal);
 							
 						}
