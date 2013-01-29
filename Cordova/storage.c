@@ -209,6 +209,54 @@ static void make_sql_error(BSTR callback_id, wchar_t* tx_id, wchar_t* err_type, 
 }
 
 
+
+// You must free the result if result is non-NULL.
+static wchar_t *str_replace(wchar_t *orig, wchar_t *rep, wchar_t *with) {
+    wchar_t *result; // the return string
+    wchar_t *ins;    // the next insert point
+    wchar_t *tmp;    // varies
+    size_t len_rep;  // length of rep
+    size_t len_with; // length of with
+    size_t len_front; // distance between rep and end of last rep
+    size_t count;    // number of replacements
+
+    if (!orig)
+        return NULL;
+    if (!rep || !(len_rep = wcslen(rep)))
+        return NULL;
+    if (!(ins = wcsstr((wchar_t *)orig, (wchar_t *)rep))) 
+        return (wchar_t *)orig;
+    if (!with)
+        with = L"";
+    len_with = wcslen(with);
+
+    for (count = 0; tmp = wcsstr(ins, rep); ++count) {
+        ins = tmp + len_rep;
+    }
+
+    // first time through the loop, all the variable are set correctly
+    // from here on,
+    //    tmp points to the end of the result string
+    //    ins points to the next occurrence of rep in orig
+    //    orig points to the remainder of orig after "end of rep"
+    tmp = result = (wchar_t *)malloc((wcslen((wchar_t *)orig) + (len_with - len_rep) * count) * sizeof(wchar_t));
+
+    if (!result)
+        return NULL;
+
+    while (count--) {
+        ins = wcsstr((wchar_t *)orig, rep);
+        len_front = ins - (wchar_t *)orig;
+        tmp = wcsncpy(tmp, (wchar_t *)orig, len_front) + len_front;
+        tmp = wcscpy(tmp, with) + len_with;
+        orig += len_front + len_rep; // move to next "end of rep"
+    }
+    wcscpy(tmp, orig);
+    return result;
+}
+
+
+
 static HRESULT execute_sql(BSTR callback_id, BSTR args)
 {
 	HRESULT res = S_OK;
@@ -330,8 +378,15 @@ static HRESULT execute_sql(BSTR callback_id, BSTR args)
 						swprintf(number, 19, L"%d", sqlite3_column_int(stmt, j));
 						text_buf_append(response, number);
 					} else if (sqlite3_column_type(stmt, j) == SQLITE_TEXT) {
+						wchar_t* val = (wchar_t *)sqlite3_column_text16(stmt, j);
 						text_buf_append(response, L"\"");
-						text_buf_append(response, (wchar_t *) sqlite3_column_text16(stmt, j));
+						if(val) {
+							// We have to escape first all backslashes, then all double quotes.
+							wchar_t* escapedVal = str_replace(val, L"\\", L"\\\\");
+							escapedVal = str_replace(escapedVal, L"\"", L"\\\"");
+							text_buf_append(response, escapedVal);
+							
+						}
 						text_buf_append(response, L"\"");
 					} else if (sqlite3_column_type(stmt, j) == SQLITE_NULL) {
 						text_buf_append(response, L"null");
@@ -370,6 +425,8 @@ out:
 
 	return res;
 }
+
+
 
 HRESULT storage_exec(BSTR callback_id, BSTR action, BSTR args, VARIANT *result)
 {
