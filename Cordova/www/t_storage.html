@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang='en'>
+    <head>
+        <title>Test suite for WebSQL module</title>
+        <script src='qunit/jquery-1.9.0.js'></script>
+        <script src='qunit/qunit-1.11.0.js'></script>
+        <link rel="stylesheet" href="qunit/qunit-1.11.0.css">
+        
+        <script src='cordova.win7.js'></script>
+    </head>
+    <body>
+        <script  type="text/javascript">
+            
+            document.addEventListener('deviceready', function () {
+                var DB = window.openDatabase("tests", "1.0", "Test DB", 1000000);
+                $(function () {
+                    asyncTest('Selecting different data-types', function () {
+                        expect(4);
+                        DB.transaction(function (tx) {
+                            tx.executeSql('DROP TABLE IF EXISTS TEST');
+                            tx.executeSql('CREATE TABLE IF NOT EXISTS TEST (t_text, t_int, t_float)');
+                            tx.executeSql('INSERT INTO TEST (t_text, t_int, t_float) VALUES ("T1", 42, 3.141592)');
+                            tx.executeSql('SELECT * FROM TEST', [], function (tx, results) {
+                                equal(results.rows.length, 1, 'Number of results');
+                                var result = results.rows.item(0);
+                                equal(result.t_text, 'T1', 'Retrieving text value');
+                                equal(result.t_int, 42, 'Retrieving integer value');
+                                equal(result.t_float, 3.141592, 'Retrieving float value');
+                                start();
+                            }, function () {
+                                ok(false, "An error occured while executing the request.");
+                                start();
+                            });
+                        }, function (tx) {
+                            ok(false, "A database error has occured");
+                            start();
+                        });
+                    });
+
+                    asyncTest('Binding different data-types', function () {
+                        expect(4);
+                        DB.transaction(function (tx) {
+                            tx.executeSql('DROP TABLE IF EXISTS TEST');
+                            tx.executeSql('CREATE TABLE IF NOT EXISTS TEST (t_text, t_int, t_float)');
+                            tx.executeSql('INSERT INTO TEST (t_text, t_int, t_float) VALUES (?, ?, ?)', ['T1', 42, 3.141592]);
+                            tx.executeSql('SELECT * FROM TEST', [], function (tx, results) {
+                                equal(results.rows.length, 1, 'Number of results');
+                                var result = results.rows.item(0);
+                                equal(result.t_text, 'T1', 'Retrieving text value');
+                                equal(result.t_int, 42, 'Retrieving integer value');
+                                equal(result.t_float, 3.141592, 'Retrieving float value');
+                                start();
+                            }, function () {
+                                ok(false, "An error occured while executing the request.");
+                                start();
+                            });
+                        }, function (tx) {
+                            ok(false, "A database error has occured");
+                            start();
+                        });
+                    });
+
+                    
+                    asyncTest('String handling', function () {
+                        var allTests = [
+                            "String with single quote : '",
+                                "String with double quote : \"",
+                                "String with \"two double quotes\"",
+                                "String with \\ backslash",
+                                "String with terminal backslash : \\",
+                                "String with two \\\\backslashes",
+                                "String with \na new line (\\n)",
+                                "String with \ra carriage return (\\r)",
+                                "String with \ta tab (\\t)"
+                        ], i, numTests = allTests.length;
+                        expect(numTests + 1);
+                        DB.transaction(function (tx) {
+
+                            tx.executeSql('DROP TABLE IF EXISTS TEST');
+                            tx.executeSql('CREATE TABLE IF NOT EXISTS TEST (t_id, t_text)');
+                            for (i = 0; i < numTests; i++) {
+                                tx.executeSql('INSERT INTO TEST (t_id, t_text) VALUES (?, ?)', [i, allTests[i]]);
+                            }
+                            tx.executeSql('SELECT * FROM TEST', [], function (tx, results) {
+                                var result, i,
+                                    numResults = results.rows.length;
+                                equal(results.rows.length, numTests, 'Number of results');
+                                for (i = 0; i < numResults; i++) {
+                                    result = results.rows.item(i);
+                                    equal(result.t_text, allTests[result.t_id], allTests[result.t_id]);
+                                }
+                                start();
+                            }, function () {
+                                ok(false, "An error occured while executing the request.");
+                                start();
+                            });
+                        }, function (tx) {
+                            ok(false, "A database error has occured");
+                            start();
+                        });
+                    });
+
+                    asyncTest('Big data', function () {
+                        DB.transaction(function (tx) {
+                            tx.executeSql('DROP TABLE IF EXISTS TEST');
+                            tx.executeSql('CREATE TABLE IF NOT EXISTS TEST (t_id, t_text)');
+                            var numTests = 1024;
+                            for (i = 0; i < numTests; i++) {
+                                tx.executeSql('INSERT INTO TEST (t_id, t_text) VALUES (?, ?)', [i, 'Lorem ipsum and all that kind of things.']);
+                            }
+                            tx.executeSql('SELECT * FROM TEST', [], function (tx, results) {
+                                equal(results.rows.length, numTests, 'Number of results');
+                                start();
+                            }, function () {
+                                ok(false, "An error occured while executing the request.");
+                                start();
+                            });
+                        }, function (tx) {
+                            ok(false, "A database error has occured");
+                            start();
+                        });
+                    });
+
+
+                });
+           }, false);
+        </script>
+        <div id="qunit"></div>
+        <div id="qunit-fixture"></div>
+    </body>
+</html>
