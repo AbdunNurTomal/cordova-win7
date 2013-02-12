@@ -196,6 +196,67 @@ static BOOL is_ddl(const wchar_t *query)
 	return FALSE;
 }
 
+
+static void make_sql_error(BSTR callback_id, wchar_t* tx_id, wchar_t* err_type, wchar_t* message) {
+	wchar_t* result = L"{id: \"%s\", code:SQLError.%s,message:\"%s\"}";
+	wchar_t* buf;
+
+	buf = (wchar_t *) malloc(sizeof(wchar_t) * (1 + wcslen(result) + wcslen(tx_id) + wcslen(err_type) + wcslen(message)));
+	wsprintf(buf, result, tx_id, err_type, message);
+
+	cordova_fail_callback(callback_id, FALSE, CB_GENERIC_ERROR, buf);
+	free(buf);
+}
+
+
+
+// You must free the result if result is non-NULL.
+static wchar_t *str_replace(wchar_t *orig, wchar_t *rep, wchar_t *with) {
+    wchar_t *result; // the return string
+    wchar_t *ins;    // the next insert point
+    wchar_t *tmp;    // varies
+    size_t len_rep;  // length of rep
+    size_t len_with; // length of with
+    size_t len_front; // distance between rep and end of last rep
+    size_t count;    // number of replacements
+
+    if (!orig)
+        return NULL;
+    if (!rep || !(len_rep = wcslen(rep)))
+        return NULL;
+    if (!(ins = wcsstr((wchar_t *)orig, (wchar_t *)rep))) 
+        return (wchar_t *)orig;
+    if (!with)
+        with = L"";
+    len_with = wcslen(with);
+
+    for (count = 0; tmp = wcsstr(ins, rep); ++count) {
+        ins = tmp + len_rep;
+    }
+
+    // first time through the loop, all the variable are set correctly
+    // from here on,
+    //    tmp points to the end of the result string
+    //    ins points to the next occurrence of rep in orig
+    //    orig points to the remainder of orig after "end of rep"
+    tmp = result = (wchar_t *)malloc((wcslen((wchar_t *)orig) + (len_with - len_rep) * count) * sizeof(wchar_t));
+
+    if (!result)
+        return NULL;
+
+    while (count--) {
+        ins = wcsstr((wchar_t *)orig, rep);
+        len_front = ins - (wchar_t *)orig;
+        tmp = wcsncpy(tmp, (wchar_t *)orig, len_front) + len_front;
+        tmp = wcscpy(tmp, with) + len_with;
+        orig += len_front + len_rep; // move to next "end of rep"
+    }
+    wcscpy(tmp, orig);
+    return result;
+}
+
+
+
 static HRESULT execute_sql(BSTR callback_id, BSTR args)
 {
 	HRESULT res = S_OK;
@@ -230,11 +291,11 @@ static HRESULT execute_sql(BSTR callback_id, BSTR args)
 
 	if (is_ddl(command)) {
 		if (sqlite3_prepare16_v2(db, command, wcslen(command) * sizeof(wchar_t), &stmt, NULL) != SQLITE_OK) {
-			cordova_fail_callback(callback_id, FALSE, CB_GENERIC_ERROR, L"{code:SQLError.SYNTAX_ERR,message:\"Syntax error\"}");
+			make_sql_error(callback_id, tx_id, L"SYNTAX_ERR", L"Syntax error");
 			goto out;
 		}
 		if (sqlite3_step(stmt) != SQLITE_DONE) {
-			cordova_fail_callback(callback_id, FALSE, CB_GENERIC_ERROR, L"{code:SQLError.DATABASE_ERR,message:\"Database error\"}");
+			make_sql_error(callback_id, tx_id, L"DATABASE_ERR", L"Database error");
 			goto out;
 		}
 
@@ -250,7 +311,7 @@ static HRESULT execute_sql(BSTR callback_id, BSTR args)
 
 		// Prepare
 		if (sqlite3_prepare16_v2(db, command, wcslen(command) * sizeof(wchar_t), &stmt, NULL) != SQLITE_OK) {
-			cordova_fail_callback(callback_id, FALSE, CB_GENERIC_ERROR, L"{code:SQLError.SYNTAX_ERR,message:\"Syntax error\"}");
+			make_sql_error(callback_id, tx_id, L"SYNTAX_ERR", L"Syntax error");
 			goto out;
 		}
 
@@ -270,7 +331,7 @@ static HRESULT execute_sql(BSTR callback_id, BSTR args)
 			case JSON_VALUE_STRING:
 				{
 					wchar_t *str = json_get_string_value(sql_arg);
-					db_res = sqlite3_bind_text16(stmt, index, str, wcslen(str) * sizeof(wchar_t), NULL);
+					db_res = sqlite3_bind_text16(stmt, index, str, wcslen(str) * sizeof(wchar_t), SQLITE_TRANSIENT);
 					free(str);
 					break;
 				}
@@ -278,11 +339,11 @@ static HRESULT execute_sql(BSTR callback_id, BSTR args)
 				db_res = sqlite3_bind_null(stmt, index);
 				break;
 			default:
-				cordova_fail_callback(callback_id, FALSE, CB_GENERIC_ERROR, L"{code:SQLError.SYNTAX_ERR,message:\"Syntax error\"}");
+				make_sql_error(callback_id, tx_id, L"SYNTAX_ERR", L"Syntax error");
 				goto out;
 			}
 			if (db_res != SQLITE_OK) {
-				cordova_fail_callback(callback_id, FALSE, CB_GENERIC_ERROR,L"{code:SQLError.SYNTAX_ERR,message:\"Syntax error\"}");
+				make_sql_error(callback_id, tx_id, L"SYNTAX_ERR", L"Syntax error");
 				goto out;
 			}
 
@@ -308,18 +369,32 @@ static HRESULT execute_sql(BSTR callback_id, BSTR args)
 					text_buf_append(response, L"\"");
 					text_buf_append(response, (wchar_t *) sqlite3_column_name16(stmt, j));
 					text_buf_append(response, L"\":");
-					if (sqlite3_column_type(stmt, j) == SQLITE_INTEGER) {
+					if (sqlite3_column_type(stmt, j) == SQLITE_FLOAT) {
+						static wchar_t number[20];
+						swprintf(number, 19, L"%f", sqlite3_column_double(stmt, j));
+						text_buf_append(response, number);
+					} else if (sqlite3_column_type(stmt, j) == SQLITE_INTEGER) {
 						static wchar_t number[20];
 						swprintf(number, 19, L"%d", sqlite3_column_int(stmt, j));
 						text_buf_append(response, number);
 					} else if (sqlite3_column_type(stmt, j) == SQLITE_TEXT) {
+						wchar_t* val = (wchar_t *)sqlite3_column_text16(stmt, j);
 						text_buf_append(response, L"\"");
-						text_buf_append(response, (wchar_t *) sqlite3_column_text16(stmt, j));
+						if(val) {
+							// We have to escape first all backslashes, then all double quotes.
+							wchar_t* escapedVal = str_replace(val, L"\\", L"\\\\");
+							escapedVal = str_replace(escapedVal, L"\"", L"\\\"");
+							escapedVal = str_replace(escapedVal, L"\n", L"\\n");
+							escapedVal = str_replace(escapedVal, L"\r", L"\\r");
+							escapedVal = str_replace(escapedVal, L"\t", L"\\t");
+							text_buf_append(response, escapedVal);
+							
+						}
 						text_buf_append(response, L"\"");
 					} else if (sqlite3_column_type(stmt, j) == SQLITE_NULL) {
 						text_buf_append(response, L"null");
 					} else {
-						cordova_fail_callback(callback_id, FALSE, CB_GENERIC_ERROR, L"{code:SQLError.DATABASE_ERR,message:\"Database error\"}");
+						make_sql_error(callback_id, tx_id, L"DATABASE_ERR", L"Database error");
 						goto out;
 					}
 				}
@@ -331,7 +406,7 @@ static HRESULT execute_sql(BSTR callback_id, BSTR args)
 					text_buf_append(response, L",");
 			} while (db_res == SQLITE_ROW);
 		} else if (db_res != SQLITE_DONE) {
-			cordova_fail_callback(callback_id, FALSE, CB_GENERIC_ERROR, L"{code:SQLError.DATABASE_ERR,message:\"Database error\"}");
+			make_sql_error(callback_id, tx_id, L"DATABASE_ERR", L"Database error");
 			goto out;
 		}
 
@@ -353,6 +428,8 @@ out:
 
 	return res;
 }
+
+
 
 HRESULT storage_exec(BSTR callback_id, BSTR action, BSTR args, VARIANT *result)
 {
