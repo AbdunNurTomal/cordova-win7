@@ -43,6 +43,11 @@ typedef struct _CordovaDb CordovaDb;
 
 static CordovaDb *db_list = NULL;
 
+// Current query.
+// TODO: The query cache should be per database.
+static wchar_t *last_query = NULL;
+static sqlite3_stmt *current_stmt;
+
 static CordovaDb *find_cordova_db(const wchar_t *name)
 {
 	CordovaDb *item = db_list;
@@ -310,11 +315,21 @@ static HRESULT execute_sql(BSTR callback_id, BSTR args)
 		int index = 1;
 
 		// Prepare
-		if (sqlite3_prepare16_v2(db, command, wcslen(command) * sizeof(wchar_t), &stmt, NULL) != SQLITE_OK) {
-			make_sql_error(callback_id, tx_id, L"SYNTAX_ERR", L"Syntax error");
-			goto out;
-		}
+		// We only prepare if the query is different from the last one.
+		if((!last_query) || (wcscmp((wchar_t *)last_query, (wchar_t *)command))) { 
+			if (current_stmt)
+				sqlite3_finalize(current_stmt);
+			
+			last_query = (wchar_t *)realloc(last_query, (wcslen(command) + 1) * sizeof(wchar_t));
 
+			wcscpy(last_query, command);
+			if (sqlite3_prepare16_v2(db, command, wcslen(command) * sizeof(wchar_t), &current_stmt, NULL) != SQLITE_OK) {
+				cordova_fail_callback(callback_id, FALSE, CB_GENERIC_ERROR, L"{code:2,message:\"Syntax error\"}");
+				goto out;
+			}
+		} else {
+			sqlite3_reset(current_stmt);
+		}
 		// Bind arguments
 		item = json_array_get_next(item);
 		sql_arg = json_get_array_value(item);
@@ -323,20 +338,20 @@ static HRESULT execute_sql(BSTR callback_id, BSTR args)
 			case JSON_VALUE_EMPTY:
 				break;
 			case JSON_VALUE_INT:
-				db_res = sqlite3_bind_int(stmt, index, json_get_int_value(sql_arg));
+				db_res = sqlite3_bind_int(current_stmt, index, json_get_int_value(sql_arg));
 				break;
 			case JSON_VALUE_DOUBLE:
-				db_res = sqlite3_bind_double(stmt, index, json_get_double_value(sql_arg));
+				db_res = sqlite3_bind_double(current_stmt, index, json_get_double_value(sql_arg));
 				break;
 			case JSON_VALUE_STRING:
 				{
 					wchar_t *str = json_get_string_value(sql_arg);
-					db_res = sqlite3_bind_text16(stmt, index, str, wcslen(str) * sizeof(wchar_t), SQLITE_TRANSIENT);
+					db_res = sqlite3_bind_text16(current_stmt, index, str, wcslen(str) * sizeof(wchar_t), SQLITE_TRANSIENT);
 					free(str);
 					break;
 				}
 			case JSON_VALUE_NULL:
-				db_res = sqlite3_bind_null(stmt, index);
+				db_res = sqlite3_bind_null(current_stmt, index);
 				break;
 			default:
 				make_sql_error(callback_id, tx_id, L"SYNTAX_ERR", L"Syntax error");
@@ -356,29 +371,29 @@ static HRESULT execute_sql(BSTR callback_id, BSTR args)
 		text_buf_append(response, tx_id);
 		text_buf_append(response, L"',data:[");
 
-		db_res = sqlite3_step(stmt);
+		db_res = sqlite3_step(current_stmt);
 		if (db_res == SQLITE_ROW) {
 			do {
 				int j;
 
 				text_buf_append(response, L"{");
-				for (j = 0; j < sqlite3_column_count(stmt); j++) {
+				for (j = 0; j < sqlite3_column_count(current_stmt); j++) {
 					if (j > 0)
 						text_buf_append(response, L",");
 
 					text_buf_append(response, L"\"");
-					text_buf_append(response, (wchar_t *) sqlite3_column_name16(stmt, j));
+					text_buf_append(response, (wchar_t *) sqlite3_column_name16(current_stmt, j));
 					text_buf_append(response, L"\":");
-					if (sqlite3_column_type(stmt, j) == SQLITE_FLOAT) {
+					if (sqlite3_column_type(current_stmt, j) == SQLITE_FLOAT) {
 						static wchar_t number[20];
-						swprintf(number, 19, L"%f", sqlite3_column_double(stmt, j));
+						swprintf(number, 19, L"%f", sqlite3_column_double(current_stmt, j));
 						text_buf_append(response, number);
-					} else if (sqlite3_column_type(stmt, j) == SQLITE_INTEGER) {
+					} else if (sqlite3_column_type(current_stmt, j) == SQLITE_INTEGER) {
 						static wchar_t number[20];
-						swprintf(number, 19, L"%d", sqlite3_column_int(stmt, j));
+						swprintf(number, 19, L"%d", sqlite3_column_int(current_stmt, j));
 						text_buf_append(response, number);
-					} else if (sqlite3_column_type(stmt, j) == SQLITE_TEXT) {
-						wchar_t* val = (wchar_t *)sqlite3_column_text16(stmt, j);
+					} else if (sqlite3_column_type(current_stmt, j) == SQLITE_TEXT) {
+						wchar_t* val = (wchar_t *)sqlite3_column_text16(current_stmt, j);
 						text_buf_append(response, L"\"");
 						if(val) {
 							// We have to escape first all backslashes, then all double quotes.
@@ -391,7 +406,7 @@ static HRESULT execute_sql(BSTR callback_id, BSTR args)
 							
 						}
 						text_buf_append(response, L"\"");
-					} else if (sqlite3_column_type(stmt, j) == SQLITE_NULL) {
+					} else if (sqlite3_column_type(current_stmt, j) == SQLITE_NULL) {
 						text_buf_append(response, L"null");
 					} else {
 						make_sql_error(callback_id, tx_id, L"DATABASE_ERR", L"Database error");
@@ -401,7 +416,7 @@ static HRESULT execute_sql(BSTR callback_id, BSTR args)
 				text_buf_append(response, L"}");
 
 				// Next
-				db_res = sqlite3_step(stmt);
+				db_res = sqlite3_step(current_stmt);
 				if (db_res == SQLITE_ROW)
 					text_buf_append(response, L",");
 			} while (db_res == SQLITE_ROW);
