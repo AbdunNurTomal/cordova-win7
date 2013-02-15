@@ -313,6 +313,8 @@ static HRESULT execute_sql(BSTR callback_id, BSTR args)
 		JsonItem sql_arg;
 		int db_res = SQLITE_OK;
 		int index = 1;
+		BOOL qNoop;
+		BOOL tNoop;
 
 		// Prepare
 		// We only prepare if the query is different from the last one.
@@ -333,6 +335,20 @@ static HRESULT execute_sql(BSTR callback_id, BSTR args)
 		// Bind arguments
 		item = json_array_get_next(item);
 		sql_arg = json_get_array_value(item);
+
+		// Next argument is queryId which isn't used.
+		item = json_array_get_next(item);
+		
+		// If query doesn't handle results, we don't fetch them.
+		item = json_array_get_next(item);
+		qNoop = json_get_bool_value(item);
+		
+		// If transaction doesn't handle success, we don't need 
+		// to send any success message.
+		item = json_array_get_next(item);
+		tNoop = json_get_bool_value(item);
+		
+
 		while (sql_arg != NULL) {
 			switch (json_get_value_type(sql_arg)) {
 			case JSON_VALUE_EMPTY:
@@ -372,6 +388,9 @@ static HRESULT execute_sql(BSTR callback_id, BSTR args)
 		text_buf_append(response, L"',data:[");
 
 		db_res = sqlite3_step(current_stmt);
+		if(qNoop && (db_res == SQLITE_ROW)) {
+			db_res = SQLITE_DONE;
+		}
 		if (db_res == SQLITE_ROW) {
 			do {
 				int j;
