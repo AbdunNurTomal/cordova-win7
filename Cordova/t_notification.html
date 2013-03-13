@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang='en'>
+    <head>
+        <title>Test suite for Notification module</title>
+        <script src='qunit/jquery-1.9.0.js'></script>
+        <script src='qunit/qunit-1.11.0.js'></script>
+        <link rel="stylesheet" href="qunit/qunit-1.11.0.css">
+        
+        <script src='cordova.win7.js'></script>
+    </head>
+    <body>
+        <script  type="text/javascript">
+
+            document.addEventListener('deviceready', function () {
+                $(function () {
+                    test('API completeness', function () {
+                        ok(!!navigator.notification, 'navigator.notification is defined');
+                        ok('function' === typeof navigator.notification.alert, 'navigator.notification.alert is a function');
+                        ok('function' === typeof navigator.notification.confirm, 'navigator.notification.confirm is a function');
+                        ok('function' === typeof navigator.notification.beep, 'navigator.notification.beep is a function');
+                        ok('function' === typeof navigator.notification.vibrate, 'navigator.notification.vibrate is a function');
+                    });
+
+                    
+                });
+            }, false);
+        </script>
+        <div id="qunit"></div>
+        <div id="qunit-fixture"></div>
+    </body>
+</html>

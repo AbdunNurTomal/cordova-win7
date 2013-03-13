@@ -4551,7 +4551,12 @@ module.exports = {
     confirm: function(message, resultCallback, title, buttonLabels) {
         var _title = (title || "Confirm");
         var _buttonLabels = (buttonLabels || "OK,Cancel");
-        exec(resultCallback, null, "Notification", "confirm", [message, _title, _buttonLabels]);
+        var cb = function (buttonIndex) {
+            // exec returns a 0-based index while notification api expects
+            // a 1-based index.
+            resultCallback(buttonIndex + 1);
+        };
+        exec(cb, null, "Notification", "confirm", [message, _title, _buttonLabels]);
     },
 
     /**

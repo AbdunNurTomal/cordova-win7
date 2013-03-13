@@ -98,6 +98,18 @@
     <None Include="www\notification.html">
       <Filter>html</Filter>
     </None>
+    <None Include="www\qunit\jquery-1.9.0.js">
+      <Filter>javascript</Filter>
+    </None>
+    <None Include="www\qunit\qunit-1.11.0.css">
+      <Filter>javascript</Filter>
+    </None>
+    <None Include="www\qunit\qunit-1.11.0.js">
+      <Filter>javascript</Filter>
+    </None>
+    <None Include="www\t_storage.html">
+      <Filter>html</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="javascript">
