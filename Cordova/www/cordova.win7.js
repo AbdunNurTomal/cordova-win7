@@ -4895,12 +4895,6 @@ var Transaction = function (database) {
     // Query list
     this.queryList = {};
     this.numPendingQueries = 0;
-
-    // This create a named transaction. We have to
-    // use named transaction since simple transaction
-    // don't allow nesting.
-    this.executeSql('SAVEPOINT ' + this.savepoint);
-    this.inTransaction = true;
 };
 
 Transaction.prototype.queryComplete = function (id) {
@@ -4913,8 +4907,6 @@ Transaction.prototype.queryComplete = function (id) {
             try {
                 var cb = this.successCallback || function () { };
                 // Commit current transaction.
-                if (this.inTransaction) this.executeSql('RELEASE ' + this.savepoint);
-                this.inTransaction = false;
                 cb();
             } catch (e) {
                 console.log("Transaction error calling user success callback: " + e);
@@ -4931,9 +4923,6 @@ Transaction.prototype.queryFailed = function (id, reason) {
     // will not be called.
     this.queryList = {};
     this.numPendingQueries = 0;
-
-    this.executeSql('ROLLBACK TRANSACTION TO SAVEPOINT ' + this.id);
-    this.inTransaction = false;
 
     if (this.errorCallback) {
         try {
@@ -4977,11 +4966,15 @@ Database.prototype.transaction = function (process, errorCallback, successCallba
     tx.errorCallback = errorCallback;
 
     try {
+        // This create a named transaction. We have to
+        // use named transaction since simple transaction
+        // don't allow nesting.
+        tx.executeSql('SAVEPOINT ' + tx.savepoint);
         process(tx);
+        tx.executeSql('RELEASE ' + tx.savepoint);
     } catch (e) {
         console.log("Transaction error: " + e);
         tx.executeSql('ROLLBACK TRANSACTION TO SAVEPOINT ' + tx.savepoint);
-        tx.inTransaction = false;
         if (tx.errorCallback) {
             try {
                 tx.errorCallback(e);
