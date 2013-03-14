@@ -104,12 +104,15 @@
                         DB.transaction(function (tx) {
                             tx.executeSql('DROP TABLE IF EXISTS TEST');
                             tx.executeSql('CREATE TABLE IF NOT EXISTS TEST (t_id, t_text)');
-                            var numTests = 1024;
+                            var numTests = 1024,
+                                insert_t = new Date;
                             for (i = 0; i < numTests; i++) {
                                 tx.executeSql('INSERT INTO TEST (t_id, t_text) VALUES (?, ?)', [i, 'Lorem ipsum and all that kind of things.']);
                             }
+                            insert_t = -(insert_t - new Date);
                             tx.executeSql('SELECT * FROM TEST', [], function (tx, results) {
                                 equal(results.rows.length, numTests, 'Number of results');
+                                ok(true, 'INFO: It took *ms to insert 1024 rows'.replace('*', insert_t));
                                 start();
                             }, function () {
                                 ok(false, "An error occured while executing the request.");
@@ -121,6 +124,44 @@
                         });
                     });
 
+                    asyncTest('Transaction handling', function () {
+                        var numTests = 10;
+
+                        function recheck() {
+                            DB.transaction(function (tx) {
+                                tx.executeSql('SELECT * FROM TEST', [], function (tx, results) {
+                                    equal(results.rows.length, numTests, 'Number of results correct after transaction');
+                                    start();
+                                }, function () {
+                                    ok(false, "An error occured while executing the request.");
+                                    start();
+                                });
+                            }, function (tx) {
+                                ok(false, "A database error has occured");
+                                start();
+                            });
+                        };
+
+                        DB.transaction(function (tx) {
+                            tx.executeSql('DROP TABLE IF EXISTS TEST');
+                            tx.executeSql('CREATE TABLE IF NOT EXISTS TEST (t_id, t_text)');
+                            var insert_t = new Date;
+                            for (i = 0; i < numTests; i++) {
+                                tx.executeSql('INSERT INTO TEST (t_id, t_text) VALUES (?, ?)', [i, 'Lorem ipsum and all that kind of things.']);
+                            }
+                            insert_t = -(insert_t - new Date);
+                            tx.executeSql('SELECT * FROM TEST', [], function (tx, results) {
+                                equal(results.rows.length, numTests, 'Number of results correct within transaction');
+                                setTimeout(recheck, 1);
+                            }, function () {
+                                ok(false, "An error occured while executing the request.");
+                                start();
+                            });
+                        }, function (tx) {
+                            ok(false, "A database error has occured");
+                            start();
+                        });
+                    });
 
                 });
            }, false);

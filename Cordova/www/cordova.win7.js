@@ -4551,7 +4551,12 @@ module.exports = {
     confirm: function(message, resultCallback, title, buttonLabels) {
         var _title = (title || "Confirm");
         var _buttonLabels = (buttonLabels || "OK,Cancel");
-        exec(resultCallback, null, "Notification", "confirm", [message, _title, _buttonLabels]);
+        var cb = function (buttonIndex) {
+            // exec returns a 0-based index while notification api expects
+            // a 1-based index.
+            resultCallback(buttonIndex + 1);
+        };
+        exec(cb, null, "Notification", "confirm", [message, _title, _buttonLabels]);
     },
 
     /**
@@ -4839,6 +4844,7 @@ function failQuery(result) {
             //       in the same transaction failed.
             if (tx && tx.queryList[id]) {
                 tx.queryList = {};
+                tx.numPendingQueries = 0;
 
                 try {
                     if (typeof query.errorCallback === 'function') {
@@ -4873,6 +4879,7 @@ var Query = function (tx) {
 
     // Add this query to transaction list
     this.tx.queryList[this.id] = this;
+    this.tx.numPendingQueries++;
 
     // Callbacks
     this.successCallback = null;
@@ -4884,6 +4891,7 @@ var Transaction = function (database) {
     this.db = database;
     // Set the id of the transaction
     this.id = utils.createUUID();
+    this.savepoint = 's_' + this.id.replace(/[-]/g, '_');
 
     // Callbacks
     this.successCallback = null;
@@ -4891,6 +4899,7 @@ var Transaction = function (database) {
 
     // Query list
     this.queryList = {};
+    this.numPendingQueries = 0;
 };
 
 Transaction.prototype.queryComplete = function (id) {
@@ -4898,16 +4907,12 @@ Transaction.prototype.queryComplete = function (id) {
 
     // If no more outstanding queries, then fire transaction success
     if (this.successCallback) {
-        var count = 0;
-        var i;
-        for (i in this.queryList) {
-            if (this.queryList.hasOwnProperty(i)) {
-                count++;
-            }
-        }
-        if (count === 0) {
+        this.numPendingQueries--;
+        if (this.numPendingQueries === 0) {
             try {
-                this.successCallback();
+                var cb = this.successCallback || function () { };
+                // Commit current transaction.
+                cb();
             } catch (e) {
                 console.log("Transaction error calling user success callback: " + e);
             }
@@ -4922,6 +4927,7 @@ Transaction.prototype.queryFailed = function (id, reason) {
     // However, the user callbacks for the remaining sql queries in transaction
     // will not be called.
     this.queryList = {};
+    this.numPendingQueries = 0;
 
     if (this.errorCallback) {
         try {
@@ -4946,8 +4952,13 @@ Transaction.prototype.executeSql = function (sql, params, successCallback, error
     query.successCallback = successCallback;
     query.errorCallback = errorCallback;
 
+    // Slight optimisation in case either the query or the transaction
+    // don't expect any callback.
+    var qNoop = !successCallback,
+        tNoop = !this.successCallback;
+
     // Call native code
-    exec(completeQuery, failQuery, "Storage", "executeSql", [this.db.id, sql, params, query.id]);
+    exec(completeQuery, failQuery, "Storage", "executeSql", [this.db.id, sql, params, query.id, qNoop, tNoop]);
 };
 
 var Database = function (dbId) {
@@ -4960,9 +4971,15 @@ Database.prototype.transaction = function (process, errorCallback, successCallba
     tx.errorCallback = errorCallback;
 
     try {
+        // This create a named transaction. We have to
+        // use named transaction since simple transaction
+        // don't allow nesting.
+        tx.executeSql('SAVEPOINT ' + tx.savepoint);
         process(tx);
+        tx.executeSql('RELEASE ' + tx.savepoint);
     } catch (e) {
         console.log("Transaction error: " + e);
+        tx.executeSql('ROLLBACK TRANSACTION TO SAVEPOINT ' + tx.savepoint);
         if (tx.errorCallback) {
             try {
                 tx.errorCallback(e);

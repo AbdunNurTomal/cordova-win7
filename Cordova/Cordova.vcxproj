@@ -150,7 +150,13 @@
     <None Include="www\notification.html">
       <SubType>Designer</SubType>
     </None>
+    <None Include="www\qunit\jquery-1.9.0.js" />
+    <None Include="www\qunit\qunit-1.11.0.css" />
+    <None Include="www\qunit\qunit-1.11.0.js" />
     <None Include="www\storage.html" />
+    <None Include="www\t_storage.html">
+      <DeploymentContent>true</DeploymentContent>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="resource.rc" />
